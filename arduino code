@@ -1,0 +1,82 @@
+#include <QTRSensors.h>
+#define SensorCount 8
+#define pwma 3
+#define pwmb 11
+#define in1 A1
+#define in2 A0
+#define in3 A3
+#define in4 A2
+#define th 500
+#define base_speed 50
+QTRSensors qtr;
+int imin , issar;
+int black = 0;
+const int buttonPin = A4; 
+int buttonState = 0; 
+static bool started = false ; 
+bool E1=1 , a=1 ,E2=1 , b=1;
+uint16_t sV[SensorCount];// varaible pour stocke le valeur de qtr8
+uint8_t i;
+int err ;
+// PID constants
+double Kp = 0.1; // Proportional gain
+double Ki = 0.0000000000001; //Integral gain
+double Kd = 1.5; // Derivative gain(i3awen fel dwer s3ab 5ater i7asen fel temp de reponse)
+int lastError = 0;
+int integral = 0,sc=0, a1=0 , bn=0;
+int pwml,pwmr,derivative,output;
+uint16_t position;
+void setup() {
+  qtr.setTypeRC();
+  qtr.setSensorPins((const uint8_t[]){ 2,10, 4, 5, 6, 7,8,9},SensorCount);
+ delay(500);
+ pinMode(LED_BUILTIN, OUTPUT);
+ digitalWrite(LED_BUILTIN,HIGH);
+for (uint16_t i = 0; i < 200; i++)
+  {
+    qtr.calibrate();
+  }
+  digitalWrite(LED_BUILTIN, LOW);// turn off Arduino's LED to indicate we are through with calibration
+ Serial.begin(9600);
+ pinMode(buttonPin, INPUT_PULLUP);
+
+ 
+}
+
+void loop() {
+  static bool started = false;
+buttonState = digitalRead(buttonPin);
+
+//if (buttonState == LOW && !started) {
+  //started = true; // Start the main loop once the button is pressed
+  //delay(1000);
+//}
+  //if (started) {
+    position = qtr.readLineBlack(sV);
+   err=3500-position;
+   //PID 
+  integral += err;
+  int derivative =( err- lastError);
+  lastError = err;
+  int output = Kp * err + Ki * integral + Kd * derivative;
+  int pwml=base_speed+output;
+  int pwmr=base_speed-output;
+  if(pwml>200)
+  pwml=200;
+  if(pwml<0)
+  pwml=0; 
+  if(pwmr>200)
+  pwmr=200;
+  if(pwmr<0)
+  pwmr=0; 
+  mot_com(pwmr,1,pwml,1);
+   }
+  
+  void mot_com(int va, bool dira, int vb, bool dirb) {
+  analogWrite(pwma, va);  // Control motor A speed
+  analogWrite(pwmb, vb);  // Control motor B speed
+  digitalWrite(in1, dira); // Direction for motor A
+  digitalWrite(in2, !dira);
+  digitalWrite(in3, dirb); // Direction for motor B
+  digitalWrite(in4, !dirb);
+}
