@@ -1,0 +1,105 @@
+#include <QTRSensors.h>
+
+#define SENSOR_COUNT 8
+#define PWMA 3
+#define PWMB 11
+#define IN1 A1
+#define IN2 A0
+#define IN3 A3
+#define IN4 A2
+#define BUTTON_PIN A4
+
+#define BASE_SPEED 80
+#define MAX_SPEED 200
+
+#define KP 0.12
+#define KI 0.0003
+#define KD 1.2
+
+QTRSensors qtr;
+uint16_t sensorValues[SENSOR_COUNT];
+
+bool started = false;
+bool blackLine = true; // default assumption
+int lastError = 0;
+double integral = 0;
+
+void setup() {
+  Serial.begin(9600);
+
+  // Motor and button setup
+  pinMode(PWMA, OUTPUT);
+  pinMode(PWMB, OUTPUT);
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(LED_BUILTIN, OUTPUT);
+
+  qtr.setTypeRC();
+  qtr.setSensorPins((const uint8_t[]){2, 10, 4, 5, 6, 7, 8, 9}, SENSOR_COUNT);
+
+  digitalWrite(LED_BUILTIN, HIGH);
+  for (uint16_t i = 0; i < 200; i++) {
+    qtr.calibrate();
+    delay(10);
+  }
+  digitalWrite(LED_BUILTIN, LOW);
+
+  detectLineColor();
+
+  Serial.println(blackLine ? "Mode: BLACK line on WHITE surface" : "Mode: WHITE line on BLACK surface");
+  delay(1000);
+}
+
+void loop() {
+  if (!started && digitalRead(BUTTON_PIN) == LOW) {
+    started = true;
+    delay(300);
+    Serial.println("Starting line following...");
+  }
+  if (!started) return;
+
+  uint16_t position = blackLine ? qtr.readLineBlack(sensorValues)
+                                : qtr.readLineWhite(sensorValues);
+  int error = 3500 - position; // center ~3500
+
+  integral += error;
+  integral = constrain(integral, -10000, 10000);
+  int derivative = error - lastError;
+  lastError = error;
+
+  int output = KP * error + KI * integral + KD * derivative;
+
+  int leftSpeed = BASE_SPEED + output;
+  int rightSpeed = BASE_SPEED - output;
+  leftSpeed = constrain(leftSpeed, 0, MAX_SPEED);
+  rightSpeed = constrain(rightSpeed, 0, MAX_SPEED);
+
+  driveMotors(leftSpeed, rightSpeed);
+
+  delay(10);
+}
+
+void driveMotors(int leftSpeed, int rightSpeed) {
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  analogWrite(PWMA, leftSpeed);
+
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+  analogWrite(PWMB, rightSpeed);
+}
+
+void detectLineColor() {
+  uint32_t total = 0;
+  for (int i = 0; i < 5; i++) {
+    qtr.read(sensorValues);
+    for (int j = 0; j < SENSOR_COUNT; j++) total += sensorValues[j];
+    delay(50);
+  }
+  double avg = total / (5.0 * SENSOR_COUNT);
+
+  blackLine = avg > 2000; 
+}
