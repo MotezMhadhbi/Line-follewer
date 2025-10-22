@@ -12,6 +12,7 @@
 #define BASE_SPEED 80
 #define MAX_SPEED 200
 
+// PID constants
 #define KP 0.12
 #define KI 0.0003
 #define KD 1.2
@@ -20,14 +21,13 @@ QTRSensors qtr;
 uint16_t sensorValues[SENSOR_COUNT];
 
 bool started = false;
-bool blackLine = true; // default assumption
+bool blackLine = true; 
 int lastError = 0;
 double integral = 0;
 
 void setup() {
   Serial.begin(9600);
 
-  // Motor and button setup
   pinMode(PWMA, OUTPUT);
   pinMode(PWMB, OUTPUT);
   pinMode(IN1, OUTPUT);
@@ -40,16 +40,17 @@ void setup() {
   qtr.setTypeRC();
   qtr.setSensorPins((const uint8_t[]){2, 10, 4, 5, 6, 7, 8, 9}, SENSOR_COUNT);
 
+  Serial.println("Starting calibration by rotation...");
   digitalWrite(LED_BUILTIN, HIGH);
-  for (uint16_t i = 0; i < 200; i++) {
-    qtr.calibrate();
-    delay(10);
-  }
+
+  calibrateRobot();  
+
   digitalWrite(LED_BUILTIN, LOW);
+  Serial.println("Calibration done!");
 
   detectLineColor();
-
   Serial.println(blackLine ? "Mode: BLACK line on WHITE surface" : "Mode: WHITE line on BLACK surface");
+
   delay(1000);
 }
 
@@ -63,8 +64,9 @@ void loop() {
 
   uint16_t position = blackLine ? qtr.readLineBlack(sensorValues)
                                 : qtr.readLineWhite(sensorValues);
-  int error = 3500 - position; // center ~3500
+  int error = 3500 - position;
 
+  // PID
   integral += error;
   integral = constrain(integral, -10000, 10000);
   int derivative = error - lastError;
@@ -83,13 +85,39 @@ void loop() {
 }
 
 void driveMotors(int leftSpeed, int rightSpeed) {
+  // Left motor
   digitalWrite(IN1, HIGH);
   digitalWrite(IN2, LOW);
   analogWrite(PWMA, leftSpeed);
 
+  // Right motor
   digitalWrite(IN3, HIGH);
   digitalWrite(IN4, LOW);
   analogWrite(PWMB, rightSpeed);
+}
+
+void calibrateRobot() {
+  unsigned long startTime = millis();
+  const int calibrationDuration = 4000;
+  const int spinSpeed = 100; 
+
+  while (millis() - startTime < calibrationDuration) {
+    // Rotate in place
+    digitalWrite(IN1, HIGH);
+    digitalWrite(IN2, LOW);
+    analogWrite(PWMA, spinSpeed);
+
+    digitalWrite(IN3, LOW);
+    digitalWrite(IN4, HIGH);
+    analogWrite(PWMB, spinSpeed);
+
+    // Calibrate sensors
+    qtr.calibrate();
+    delay(10);
+  }
+
+  driveMotors(0, 0);
+  delay(200);
 }
 
 void detectLineColor() {
